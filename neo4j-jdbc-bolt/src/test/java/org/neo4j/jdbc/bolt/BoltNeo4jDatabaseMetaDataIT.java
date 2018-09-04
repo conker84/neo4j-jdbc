@@ -21,14 +21,18 @@
  */
 package org.neo4j.jdbc.bolt;
 
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.neo4j.jdbc.bolt.utils.JdbcConnectionTestUtils;
+
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-
-import org.junit.Rule;
-import org.junit.Test;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -39,23 +43,31 @@ public class BoltNeo4jDatabaseMetaDataIT {
 
 	@Rule public Neo4jBoltRule neo4j = new Neo4jBoltRule();
 
+	Connection connection;
+
+	@Before public void setUp(){
+		connection = JdbcConnectionTestUtils.verifyConnection(connection,neo4j);
+	}
+
+	@After
+	public void tearDown() throws SQLException {
+		JdbcConnectionTestUtils.closeConnection(connection);
+	}
+
 	@Test public void getDatabaseVersionShouldBeOK() throws SQLException, NoSuchFieldException, IllegalAccessException {
-		Connection connection = DriverManager.getConnection("jdbc:neo4j:" + neo4j.getBoltUrl() + "?nossl","user","password");
 
 		assertNotNull(connection.getMetaData().getDatabaseProductVersion());
 		assertNotEquals(-1, connection.getMetaData().getDatabaseMajorVersion());
 		assertNotEquals(-1, connection.getMetaData().getDatabaseMajorVersion());
 		assertEquals("user", connection.getMetaData().getUserName());
 
-		connection.close();
 	}
 
-	@Test public void getDatabaseLabelsShouldBeOK() throws SQLException {
-		Connection connection = DriverManager.getConnection("jdbc:neo4j:" + neo4j.getBoltUrl() + "?nossl","user","password");
+	@Test public void getTablesWithNull() throws SQLException, NoSuchFieldException, IllegalAccessException {
 
 		try (Statement statement = connection.createStatement()) {
 			statement.execute("create (a:A {one:1, two:2})");
-			statement.execute("create (b:`B B` {foo:3, bar:4})");
+			statement.execute("create (b:B {three:3, four:4})");
 		}
 		
 		ResultSet labels = connection.getMetaData().getTables(null, null, null, null);
@@ -64,38 +76,140 @@ public class BoltNeo4jDatabaseMetaDataIT {
 		assertTrue(labels.next());
 		assertEquals("A", labels.getString("TABLE_NAME"));
 		assertTrue(labels.next());
-		assertEquals("B B", labels.getString("TABLE_NAME"));
+		assertEquals("B", labels.getString("TABLE_NAME"));
 		assertTrue(!labels.next());
 
-		connection.close();
 	}
 
-	@Test public void classShouldWorkIfTransactionIsAlreadyOpened() throws SQLException {
-		Connection connection = DriverManager.getConnection("jdbc:neo4j:" + neo4j.getBoltUrl() + "?nossl","user","password");
-		connection.setAutoCommit(false);
-		connection.getMetaData();
-
-		connection.close();
-	}
-
-	@Test public void getDatabaseColumnsShouldBeOK() throws SQLException {
-		Connection connection = DriverManager.getConnection("jdbc:neo4j:" + neo4j.getBoltUrl() + "?nossl","user","password");
+	@Test public void getTablesWithStrictPattern() throws SQLException, NoSuchFieldException, IllegalAccessException {
 
 		try (Statement statement = connection.createStatement()) {
-			statement.execute("create (p:Person{name: 'Andrea', age: 80, `foo bar`: 'foo bar'})");
+			statement.execute("create (a:Test {one:1, two:2})");
+			statement.execute("create (b:Testa {three:3, four:4})");
+		}
+
+		ResultSet labels = connection.getMetaData().getTables(null, null, "Test", null);
+
+		assertNotNull(labels);
+		List<String> tableNames = new ArrayList<>();
+
+		while(labels.next()){
+			tableNames.add(labels.getString("TABLE_NAME"));
+		}
+
+		assertEquals(1, tableNames.size());
+		assertTrue(tableNames.contains("Test"));
+
+	}
+
+	@Test public void getTablesWithPattern() throws SQLException, NoSuchFieldException, IllegalAccessException {
+
+		try (Statement statement = connection.createStatement()) {
+			statement.execute("create (a:Test {one:1, two:2})");
+			statement.execute("create (b:Testa {three:3, four:4})");
+		}
+
+		ResultSet labels = connection.getMetaData().getTables(null, null, "Test%", null);
+
+		assertNotNull(labels);
+		List<String> tableNames = new ArrayList<>();
+
+		while(labels.next()){
+			tableNames.add(labels.getString("TABLE_NAME"));
+		}
+
+		assertEquals(2, tableNames.size());
+		assertTrue(tableNames.contains("Test"));
+		assertTrue(tableNames.contains("Testa"));
+	}
+
+	@Test public void getTablesWithWildcard() throws SQLException, NoSuchFieldException, IllegalAccessException {
+
+		try (Statement statement = connection.createStatement()) {
+			statement.execute("create (a:Foo {one:1, two:2})");
+			statement.execute("create (b:Bar {three:3, four:4})");
+		}
+
+		ResultSet labels = connection.getMetaData().getTables(null, null, "%", null);
+
+		assertNotNull(labels);
+		List<String> tableNames = new ArrayList<>();
+
+		while(labels.next()){
+			tableNames.add(labels.getString("TABLE_NAME"));
+		}
+
+		assertEquals(2, tableNames.size());
+		assertTrue(tableNames.contains("Foo"));
+		assertTrue(tableNames.contains("Bar"));
+	}
+
+	@Test public void getColumnWithNull() throws SQLException, NoSuchFieldException, IllegalAccessException {
+
+		try (Statement statement = connection.createStatement()) {
+			statement.execute("create (a:A {one:1, two:2})");
+			statement.execute("create (b:B {three:3, four:4})");
 		}
 
 		ResultSet columns = connection.getMetaData().getColumns(null, null, null, null);
 
 		assertNotNull(columns);
-		assertTrue(columns.next());
-		assertEquals("foo bar", columns.getString(4));
-		assertTrue(columns.next());
-		assertEquals("name", columns.getString(4));
-		assertTrue(columns.next());
-		assertEquals("age", columns.getString(4));
-		assertFalse(columns.next());
+		List<String> columnNames = new ArrayList<>();
 
-		connection.close();
+		while(columns.next()){
+			columnNames.add(columns.getString("COLUMN_NAME"));
+		}
+
+		assertEquals(4, columnNames.size());
+		assertTrue(columnNames.contains("one"));
+		assertTrue(columnNames.contains("two"));
+		assertTrue(columnNames.contains("three"));
+		assertTrue(columnNames.contains("four"));
+	}
+
+	@Test public void getColumnWithTablePattern() throws SQLException, NoSuchFieldException, IllegalAccessException {
+
+		try (Statement statement = connection.createStatement()) {
+			statement.execute("create (a:Test {one:1, two:2})");
+			statement.execute("create (b:Test2 {three:3, four:4})");
+		}
+
+		ResultSet columns = connection.getMetaData().getColumns(null, null, "Test", null);
+
+		assertNotNull(columns);
+		List<String> columnNames = new ArrayList<>();
+
+		while(columns.next()){
+			columnNames.add(columns.getString("COLUMN_NAME"));
+		}
+
+		assertEquals(2, columnNames.size());
+		assertTrue(columnNames.contains("one"));
+		assertTrue(columnNames.contains("two"));
+	}
+
+	@Test public void getColumnWithColumnPattern() throws SQLException, NoSuchFieldException, IllegalAccessException {
+
+		try (Statement statement = connection.createStatement()) {
+			statement.execute("create (a:Test {one:1, two:2})");
+			statement.execute("create (b:Test2 {three:3, four:4})");
+		}
+
+		ResultSet columns = connection.getMetaData().getColumns(null, null, "Test", "t%");
+
+		assertNotNull(columns);
+		List<String> columnNames = new ArrayList<>();
+
+		while(columns.next()){
+			columnNames.add(columns.getString("COLUMN_NAME"));
+		}
+
+		assertEquals(1, columnNames.size());
+		assertTrue(columnNames.contains("two"));
+	}
+
+	@Test public void classShouldWorkIfTransactionIsAlreadyOpened() throws SQLException {
+		connection.setAutoCommit(false);
+		connection.getMetaData();
 	}
 }
