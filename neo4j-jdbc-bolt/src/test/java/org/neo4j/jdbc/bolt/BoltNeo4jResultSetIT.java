@@ -31,6 +31,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Map;
 
 import static org.junit.Assert.*;
 
@@ -141,7 +142,7 @@ public class BoltNeo4jResultSetIT {
 		JdbcConnectionTestUtils.closeConnection(con, stmt, rs);
 	}
 
-	@Test public void shouldNotHaveNext() throws SQLException {
+	@Test public void shouldHasntNext() throws SQLException {
 		neo4j.getGraphDatabase().execute("unwind range(1,5) as x create (:User{number:x})");
 
 		Connection con = JdbcConnectionTestUtils.getConnection(neo4j);
@@ -153,42 +154,92 @@ public class BoltNeo4jResultSetIT {
 		JdbcConnectionTestUtils.closeConnection(con, stmt, rs);
 	}
 
-	@Test public void shouldManageBacktick() throws SQLException {
-		Connection conn = DriverManager.getConnection("jdbc:neo4j:" + neo4j.getBoltUrl() + "?nossl,flatten=-1");
-		Statement stmt = conn.createStatement();
-		stmt.executeUpdate("create (p:`Person Ext`{name: 'Andrea', age: 80, `foo bar`: 'foo bar', foo_bar: 123, `@`: '@'})" +
-				"-[:`KNOWS WHO`{since: 1933, `bar foo`:'bar foo'}]->" +
-				"(p1:Person{name: 'Michael', age: 80, `foo bar`: 'foo bar'})");
+	@Test public void shouldGetRowReturnStringFromNumber() throws SQLException {
+		neo4j.getGraphDatabase().execute("CREATE (:Test {intn: 1, floatn: 1.123})");
 
-		ResultSet rs = stmt.executeQuery("MATCH (p:Person) RETURN p;");
-		assertEquals(6, rs.getMetaData().getColumnCount());
-		assertTrue(rs.next());
-		assertEquals("Michael", rs.getString("p.name"));
-		assertEquals(80L, rs.getLong("p.age"));
-		assertEquals("foo bar", rs.getString("p.`foo bar`"));
-		assertArrayEquals(new String[] { "Person" }, (String[]) rs.getArray("p.labels").getArray());
-		assertFalse(rs.next());
+		Connection con = JdbcConnectionTestUtils.getConnection(neo4j);
+		Statement stmt = con.createStatement();
+		ResultSet rs = stmt.executeQuery("MATCH (x:Test) RETURN x.intn as i , x.floatn as f");
 
-		rs = stmt.executeQuery("MATCH (p:`Person Ext`) RETURN p;");
-		assertEquals(8, rs.getMetaData().getColumnCount());
-		assertTrue(rs.next());
-		assertEquals("Andrea", rs.getString("p.name"));
-		assertEquals(80L, rs.getLong("p.age"));
-		assertEquals("foo bar", rs.getString("p.`foo bar`"));
-		assertEquals(123L, rs.getLong("p.foo_bar"));
-		assertEquals("@", rs.getString("p.`@`"));
-		assertArrayEquals(new String[] { "Person Ext" }, (String[]) rs.getArray("p.labels").getArray());
-		assertFalse(rs.next());
+		rs.next();
 
+		assertEquals(1, rs.getInt("i"));
+		assertEquals(1.123, rs.getDouble("f"),0.0001);
 
-		rs = stmt.executeQuery("MATCH (p:`Person Ext`)-[k:`KNOWS WHO`]->(p1:Person) RETURN k;");
-		assertEquals(5, rs.getMetaData().getColumnCount());
-		assertTrue(rs.next());
-		assertEquals(1933L, rs.getLong("k.since"));
-		assertEquals("bar foo", rs.getString("k.`bar foo`"));
-		assertEquals("KNOWS WHO", rs.getString("k.type"));
-		assertFalse(rs.next());
+		assertEquals("1", rs.getString("i"));
+		assertEquals("1.123", rs.getString("f"));
 
-		conn.close();
+		JdbcConnectionTestUtils.closeConnection(con, stmt, rs);
 	}
+
+	@Test public void shouldGetRowReturnStringFromNode() throws SQLException {
+		neo4j.getGraphDatabase().execute("CREATE (:Test {intn: 1, floatn: 1.123})");
+
+		Connection con = JdbcConnectionTestUtils.getConnection(neo4j);
+		Statement stmt = con.createStatement();
+		ResultSet rs = stmt.executeQuery("MATCH (x:Test) RETURN x");
+
+		rs.next();
+		//checks the content parts of the json string because the order can change and the id is always different
+		String json = rs.getString("x");
+		assertTrue(json.startsWith("{"));
+		assertTrue(json.endsWith("}"));
+		assertTrue(json.contains("\"labels\":[\"Test\"]"));
+		assertTrue(json.contains("\"floatn\":1.123"));
+		assertTrue(json.contains("\"intn\":1"));
+
+		JdbcConnectionTestUtils.closeConnection(con, stmt, rs);
+	}
+
+	@Test public void shouldGetRowReturnNodeValues() throws SQLException {
+		neo4j.getGraphDatabase().execute("CREATE (:Test {intn: 1, floatn: 1.123})");
+
+		Connection con = JdbcConnectionTestUtils.getConnection(neo4j);
+		Statement stmt = con.createStatement();
+		ResultSet rs = stmt.executeQuery("MATCH (x:Test) RETURN x");
+
+		rs.next();
+		Map<String, Object> map = (Map<String, Object>) rs.getObject("x");
+
+		assertEquals(1L, map.get("intn"));
+		assertEquals(1.123,(Double) map.get("floatn"),0.0001);
+
+		JdbcConnectionTestUtils.closeConnection(con, stmt, rs);
+	}
+
+	@Test public void shouldGetRowReturnStringFromRelationship() throws SQLException {
+		neo4j.getGraphDatabase().execute("CREATE (a:Test)-[r:Rel {intn: 1, floatn: 1.123}]->(b:Test)");
+
+		Connection con = JdbcConnectionTestUtils.getConnection(neo4j);
+		Statement stmt = con.createStatement();
+		ResultSet rs = stmt.executeQuery("MATCH (a:Test)-[r:Rel]->(b:Test) RETURN r");
+
+		rs.next();
+		//checks the content parts of the json string because the order can change and the id is always different
+		String json = rs.getString("r");
+		assertTrue(json.startsWith("{"));
+		assertTrue(json.endsWith("}"));
+		assertTrue(json.contains("\"type\":\"Rel\""));
+		assertTrue(json.contains("\"floatn\":1.123"));
+		assertTrue(json.contains("\"intn\":1"));
+
+		JdbcConnectionTestUtils.closeConnection(con, stmt, rs);
+	}
+
+	@Test public void shouldGetRowReturnRelatianValues() throws SQLException {
+		neo4j.getGraphDatabase().execute("CREATE (a:Test)-[r:Rel {intn: 1, floatn: 1.123}]->(b:Test)");
+
+		Connection con = JdbcConnectionTestUtils.getConnection(neo4j);
+		Statement stmt = con.createStatement();
+		ResultSet rs = stmt.executeQuery("MATCH (a:Test)-[r:Rel]->(b:Test) RETURN r");
+
+		rs.next();
+		Map<String, Object> map = (Map<String, Object>) rs.getObject("r");
+
+		assertEquals(1L, map.get("intn"));
+		assertEquals(1.123,(Double) map.get("floatn"),0.0001);
+
+		JdbcConnectionTestUtils.closeConnection(con, stmt, rs);
+	}
+
 }
