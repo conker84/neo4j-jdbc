@@ -157,6 +157,13 @@ As most JDBC clients and tools don't support complex objects, the driver can fla
 This is enabled with the JDBC-URL parameter `flatten=<rows>`, where `<rows>` indicates how many rows are sampled to determine those columns.
 With `-1` all rows are sampled and with any other value you determine the number of rows being looked at.
 
+=== Bolt Read only connection
+
+You can specify a fixed read only connection in this way
+`jdbc:neo4j:bolt://<host>:<port>/?readOnly=true`
+
+Please consider that any further modification via the `Connection#setReadOnly` method will have no effect
+
 === Tomcat
 When the JDBC driver is configured as a JNDI resource into Tomcat, you must include these two arguments on `Resource` configuration:
 
@@ -209,6 +216,7 @@ mvn clean test -Pperformance-test
 [NOTE]
 To run the performance test, you must have a Neo4j Server 3.3.x running with the Bolt protocol enabled on port 7687 (default).
 
+===
 
 === License
 

@@ -100,7 +100,8 @@ public class BoltNeo4jConnectionImpl extends Neo4jConnectionImpl implements Bolt
 	public Session newNeo4jSession(){
 		try {
 			String bookmark = this.getClientInfo(BoltRoutingNeo4jDriver.BOOKMARK);
-			return this.driver.session(getReadOnly() ? AccessMode.READ : AccessMode.WRITE, bookmark);
+			final boolean readOnly = Boolean.parseBoolean(getProperties().getProperty("readOnly", String.valueOf(getReadOnly())));
+			return this.driver.session(readOnly ? AccessMode.READ : AccessMode.WRITE, bookmark);
 		}
 		catch (Exception e) {
 			throw new RuntimeException(e);
