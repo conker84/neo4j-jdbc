@@ -53,6 +53,7 @@ public class BoltNeo4jConnectionImpl extends Neo4jConnectionImpl implements Bolt
 	private BoltNeo4jDatabaseMetaData metadata;
 	private boolean readOnly;
 	private boolean userBookmarks;
+	private boolean refreshSession;
 
 	private static final Logger LOGGER = Logger.getLogger(BoltNeo4jConnectionImpl.class.getName());
 
@@ -66,7 +67,8 @@ public class BoltNeo4jConnectionImpl extends Neo4jConnectionImpl implements Bolt
 	public BoltNeo4jConnectionImpl(Driver driver, Properties properties, String url) {
 		super(properties, url, BoltNeo4jResultSet.DEFAULT_HOLDABILITY);
 		this.readOnly = Boolean.parseBoolean(getProperties().getProperty("readonly"));
-		this.userBookmarks = Boolean.parseBoolean(getProperties().getProperty("usebookmarks", "true"));
+		this.userBookmarks = Boolean.parseBoolean(getProperties().getProperty("c", "true"));
+		this.refreshSession = Boolean.parseBoolean(getProperties().getProperty("refreshsession", "false"));
 		this.driver = driver;
 		this.initSession();
 	}
@@ -236,21 +238,37 @@ public class BoltNeo4jConnectionImpl extends Neo4jConnectionImpl implements Bolt
 	}
 
 	@Override public void close() throws SQLException {
-		try {
-			if (!this.isClosed()) {
-				if (this.transaction != null) {
-					this.transaction.close();
-					this.transaction = null;
+		close(true);
+	}
+
+	private void close(boolean closeDriver) throws SQLException {
+		synchronized (this) {
+			try {
+				if (!this.isClosed()) {
+					closeTransaction();
+					closeSession(closeDriver);
 				}
-                if (this.session != null) {
-                    this.session.close();
-                    this.session = null;
-                    this.driver.close();
-                    this.driver = null;
-                }
-            }
-		} catch (Exception e) {
-			throw new SQLException("A database access error has occurred: " + e.getMessage());
+			} catch (Exception e) {
+				throw new SQLException("A database access error has occurred: " + e.getMessage());
+			}
+		}
+	}
+
+	private void closeSession(boolean closeDriver) {
+		if (this.session != null) {
+			this.session.close();
+			this.session = null;
+			if (closeDriver) {
+				this.driver.close();
+				this.driver = null;
+			}
+		}
+	}
+
+	private void closeTransaction() {
+		if (this.transaction != null) {
+			this.transaction.close();
+			this.transaction = null;
 		}
 	}
 
@@ -309,11 +327,17 @@ public class BoltNeo4jConnectionImpl extends Neo4jConnectionImpl implements Bolt
 	 * This way we point to the right cluster instance (core vs read replica).
 	 */
 	private void initSession() {
-		this.session = newNeo4jSession();
+		synchronized (this) {
+			this.session = newNeo4jSession();
+		}
     }
 
     private void initTransaction()  {
 	    try {
+	    	if (refreshSession) {
+				close(false);
+	    		initSession();
+			}
             if (this.transaction == null) {
                 this.transaction = this.session.beginTransaction();
 			}

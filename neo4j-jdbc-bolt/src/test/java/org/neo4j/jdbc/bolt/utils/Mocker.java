@@ -49,8 +49,11 @@ public class Mocker {
 
 	public static Driver mockDriverOpen() {
         Session session = mockSessionOpen();
+        Session session1 = mockSessionOpen();
+        Session session2 = mockSessionOpen();
+        Session session3 = mockSessionOpen();
 		Driver driver = mock(Driver.class);
-		when(driver.session(any(AccessMode.class), anyString())).thenReturn(session);
+		when(driver.session(any(AccessMode.class), anyString())).thenReturn(session, session1, session2, session3);
 		return driver;
 	}
 
