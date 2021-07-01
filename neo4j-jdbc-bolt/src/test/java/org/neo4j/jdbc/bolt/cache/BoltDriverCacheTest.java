@@ -43,7 +43,6 @@ public class BoltDriverCacheTest {
         assertEquals(0, cache.getCache().size());
 
         int numThreads = Runtime.getRuntime().availableProcessors();
-        System.out.println("numThreads = " + numThreads);
         ExecutorService executor = Executors.newWorkStealingPool();
 
         AtomicBoolean running = new AtomicBoolean();
